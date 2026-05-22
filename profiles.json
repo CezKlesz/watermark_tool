@@ -1,0 +1,17 @@
+{
+  "VISUALMODE": {
+    "line1": "VISUALMODE",
+    "line2": "nie do publikacji",
+    "font_family": "Tahoma",
+    "bold": true,
+    "italic": false,
+    "underline": false,
+    "font_size": 200,
+    "spacing_h": 1249,
+    "spacing_v": 2000,
+    "opacity_pct": 40,
+    "export_size": 800,
+    "source_path": "",
+    "output_path": ""
+  }
+}
