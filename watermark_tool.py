@@ -102,11 +102,14 @@ def _save_profiles(profiles: dict) -> None:
 
 def _find_ffmpeg() -> tuple:
     """Return (ffmpeg_path, ffprobe_path) or (None, None) if not found."""
+    import glob
+
     ffmpeg  = shutil.which("ffmpeg")
     ffprobe = shutil.which("ffprobe")
     if ffmpeg and ffprobe:
         return ffmpeg, ffprobe
 
+    # Explicit common install paths
     common = [
         r"C:\ffmpeg\bin",
         r"C:\Program Files\ffmpeg\bin",
@@ -117,6 +120,21 @@ def _find_ffmpeg() -> tuple:
         fp = os.path.join(base, "ffprobe.exe")
         if os.path.exists(ff) and os.path.exists(fp):
             return ff, fp
+
+    # Glob search — catches versioned sub-folders (e.g. pic-time, winget packages)
+    search_roots = [
+        r"C:\Program Files\*\ffmpeg.exe",
+        r"C:\Program Files\*\*\ffmpeg.exe",
+        r"C:\Program Files\*\*\*\ffmpeg.exe",
+        r"C:\Program Files (x86)\*\ffmpeg.exe",
+        r"C:\Program Files (x86)\*\*\ffmpeg.exe",
+        os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Packages\*\ffmpeg.exe"),
+    ]
+    for pattern in search_roots:
+        for ff in glob.glob(pattern):
+            fp = os.path.join(os.path.dirname(ff), "ffprobe.exe")
+            if os.path.exists(fp):
+                return ff, fp
 
     return None, None
 
