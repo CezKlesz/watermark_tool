@@ -358,7 +358,8 @@ class WatermarkApp:
         self.root.title(f"Watermark Tool {VERSION}")
         self.root.resizable(True, False)
 
-        self._ffmpeg, self._ffprobe = _find_ffmpeg()
+        self._ffmpeg  = None
+        self._ffprobe = None
 
         self.source_path   = tk.StringVar()
         self.output_path   = tk.StringVar()
@@ -382,13 +383,16 @@ class WatermarkApp:
         self._build_ui()
         self._refresh_profile_list()
 
-        # Show FFmpeg status in status bar
+        self.status_lbl.configure(text="Szukam FFmpeg…")
+        threading.Thread(target=self._detect_ffmpeg, daemon=True).start()
+
+    def _detect_ffmpeg(self) -> None:
+        self._ffmpeg, self._ffprobe = _find_ffmpeg()
         if self._ffmpeg:
-            self.status_lbl.configure(text="Gotowy. FFmpeg dostępny — obsługa wideo włączona.")
+            msg = "Gotowy. FFmpeg dostępny — obsługa wideo włączona."
         else:
-            self.status_lbl.configure(
-                text="Gotowy. FFmpeg niedostępny — przetwarzanie wideo wyłączone."
-            )
+            msg = "Gotowy. FFmpeg niedostępny — przetwarzanie wideo wyłączone."
+        self.root.after(0, lambda: self.status_lbl.configure(text=msg))
 
     # ──────────────────────────────── UI construction ────────────────────────
 

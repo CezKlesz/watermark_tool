@@ -1,66 +1,129 @@
 """
-Watermark Tool v1.1
+Watermark Tool v1.1 — Linux
 Nakłada powtarzający się znak wodny (45° CCW) i eksportuje do zadanej rozdzielczości.
 Obsługuje zdjęcia i filmy wideo (wideo wymaga FFmpeg).
 """
 import json
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, simpledialog
 import os
-import threading
+import shutil
 import subprocess
 import tempfile
-import shutil
+import threading
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, simpledialog
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 VERSION = "v1.1"
 
 SUPPORTED_EXT       = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp"}
 SUPPORTED_VIDEO_EXT = {".mp4", ".mov", ".avi", ".mkv", ".mts", ".m2ts", ".wmv", ".flv"}
-WIN_FONTS           = "C:/Windows/Fonts/"
 PROFILES_FILE       = os.path.join(os.path.dirname(os.path.abspath(__file__)), "profiles.json")
 
-# Suppress console window on Windows when calling FFmpeg
-_PROC_FLAGS = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+_LINUX_FONT_DIRS = [
+    "/usr/share/fonts",
+    "/usr/local/share/fonts",
+    os.path.expanduser("~/.local/share/fonts"),
+    os.path.expanduser("~/.fonts"),
+]
 
-_FONT_CATALOG = [
-    ("Arial",           {"r": "arial.ttf",    "b": "arialbd.ttf",  "i": "ariali.ttf",   "bi": "arialbi.ttf"}),
-    ("Arial Narrow",    {"r": "ARIALN.TTF",   "b": "ARIALNB.TTF",  "i": "ARIALNI.TTF",  "bi": "ARIALNBI.TTF"}),
-    ("Calibri",         {"r": "calibri.ttf",  "b": "calibrib.ttf", "i": "calibrii.ttf", "bi": "calibriz.ttf"}),
-    ("Cambria",         {"r": "cambria.ttc",  "b": "cambriab.ttf", "i": "cambriai.ttf", "bi": "cambriaz.ttf"}),
-    ("Comic Sans MS",   {"r": "comic.ttf",    "b": "comicbd.ttf",  "i": "comic.ttf",    "bi": "comicbd.ttf"}),
-    ("Courier New",     {"r": "cour.ttf",     "b": "courbd.ttf",   "i": "couri.ttf",    "bi": "courbi.ttf"}),
-    ("Georgia",         {"r": "georgia.ttf",  "b": "georgiab.ttf", "i": "georgiai.ttf", "bi": "georgiaz.ttf"}),
-    ("Impact",          {"r": "impact.ttf",   "b": "impact.ttf",   "i": "impact.ttf",   "bi": "impact.ttf"}),
-    ("Segoe UI",        {"r": "segoeui.ttf",  "b": "segoeuib.ttf", "i": "segoeuii.ttf", "bi": "segoeuiz.ttf"}),
-    ("Tahoma",          {"r": "tahoma.ttf",   "b": "tahomabd.ttf", "i": "tahoma.ttf",   "bi": "tahomabd.ttf"}),
-    ("Times New Roman", {"r": "times.ttf",    "b": "timesbd.ttf",  "i": "timesi.ttf",   "bi": "timesbi.ttf"}),
-    ("Trebuchet MS",    {"r": "trebuc.ttf",   "b": "trebucbd.ttf", "i": "trebucit.ttf", "bi": "trebucbi.ttf"}),
-    ("Verdana",         {"r": "verdana.ttf",  "b": "verdanab.ttf", "i": "verdanai.ttf", "bi": "verdanaz.ttf"}),
+_FONT_CATALOG_LINUX = [
+    ("DejaVu Sans", {
+        "r":  ["DejaVuSans.ttf"],
+        "b":  ["DejaVuSans-Bold.ttf"],
+        "i":  ["DejaVuSans-Oblique.ttf"],
+        "bi": ["DejaVuSans-BoldOblique.ttf"],
+    }),
+    ("Liberation Sans", {
+        "r":  ["LiberationSans-Regular.ttf"],
+        "b":  ["LiberationSans-Bold.ttf"],
+        "i":  ["LiberationSans-Italic.ttf"],
+        "bi": ["LiberationSans-BoldItalic.ttf"],
+    }),
+    ("Liberation Serif", {
+        "r":  ["LiberationSerif-Regular.ttf"],
+        "b":  ["LiberationSerif-Bold.ttf"],
+        "i":  ["LiberationSerif-Italic.ttf"],
+        "bi": ["LiberationSerif-BoldItalic.ttf"],
+    }),
+    ("Liberation Mono", {
+        "r":  ["LiberationMono-Regular.ttf"],
+        "b":  ["LiberationMono-Bold.ttf"],
+        "i":  ["LiberationMono-Italic.ttf"],
+        "bi": ["LiberationMono-BoldItalic.ttf"],
+    }),
+    ("Ubuntu", {
+        "r":  ["Ubuntu-R.ttf", "Ubuntu-Regular.ttf"],
+        "b":  ["Ubuntu-B.ttf", "Ubuntu-Bold.ttf"],
+        "i":  ["Ubuntu-RI.ttf", "Ubuntu-Italic.ttf"],
+        "bi": ["Ubuntu-BI.ttf", "Ubuntu-BoldItalic.ttf"],
+    }),
+    ("Noto Sans", {
+        "r":  ["NotoSans-Regular.ttf"],
+        "b":  ["NotoSans-Bold.ttf"],
+        "i":  ["NotoSans-Italic.ttf"],
+        "bi": ["NotoSans-BoldItalic.ttf"],
+    }),
+    ("FreeSans", {
+        "r":  ["FreeSans.otf", "FreeSans.ttf"],
+        "b":  ["FreeSansBold.otf", "FreeSansBold.ttf"],
+        "i":  ["FreeSansOblique.otf", "FreeSansOblique.ttf"],
+        "bi": ["FreeSansBoldOblique.otf", "FreeSansBoldOblique.ttf"],
+    }),
+    ("FreeSerif", {
+        "r":  ["FreeSerif.otf", "FreeSerif.ttf"],
+        "b":  ["FreeSerifBold.otf", "FreeSerifBold.ttf"],
+        "i":  ["FreeSerifItalic.otf", "FreeSerifItalic.ttf"],
+        "bi": ["FreeSerifBoldItalic.otf", "FreeSerifBoldItalic.ttf"],
+    }),
 ]
 
 _FALLBACK_PATHS = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/System/Library/Fonts/Helvetica.ttc",
+    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
 ]
+
+
+# Indeks plików czcionek budowany raz przy starcie
+_FONT_FILE_INDEX: dict = {}
+
+
+def _build_font_index() -> dict:
+    idx = {}
+    for font_dir in _LINUX_FONT_DIRS:
+        if not os.path.isdir(font_dir):
+            continue
+        for root, _, files in os.walk(font_dir):
+            for fname in files:
+                idx[fname.lower()] = os.path.join(root, fname)
+    return idx
+
+
+def _find_font(name_patterns: list) -> str:
+    for pattern in name_patterns:
+        found = _FONT_FILE_INDEX.get(pattern.lower(), "")
+        if found:
+            return found
+    return ""
 
 
 def _build_available_fonts() -> dict:
     available = {}
-    for name, variants in _FONT_CATALOG:
-        regular = os.path.join(WIN_FONTS, variants["r"])
-        if os.path.exists(regular):
+    for name, variants in _FONT_CATALOG_LINUX:
+        regular = _find_font(variants["r"])
+        if regular:
             resolved = {}
-            for key, fname in variants.items():
-                path = os.path.join(WIN_FONTS, fname)
-                resolved[key] = path if os.path.exists(path) else regular
+            for key, patterns in variants.items():
+                path = _find_font(patterns)
+                resolved[key] = path if path else regular
             available[name] = resolved
     return available
 
 
+_FONT_FILE_INDEX = _build_font_index()
 AVAILABLE_FONTS: dict = _build_available_fonts()
-FONT_NAMES: list = list(AVAILABLE_FONTS.keys()) or ["Arial"]
+FONT_NAMES: list = list(AVAILABLE_FONTS.keys()) or ["DejaVu Sans"]
 
 
 def _resolve_font_path(family: str, bold: bool, italic: bool) -> str:
@@ -102,40 +165,10 @@ def _save_profiles(profiles: dict) -> None:
 
 def _find_ffmpeg() -> tuple:
     """Return (ffmpeg_path, ffprobe_path) or (None, None) if not found."""
-    import glob
-
     ffmpeg  = shutil.which("ffmpeg")
     ffprobe = shutil.which("ffprobe")
     if ffmpeg and ffprobe:
         return ffmpeg, ffprobe
-
-    # Explicit common install paths
-    common = [
-        r"C:\ffmpeg\bin",
-        r"C:\Program Files\ffmpeg\bin",
-        r"C:\Program Files (x86)\ffmpeg\bin",
-    ]
-    for base in common:
-        ff = os.path.join(base, "ffmpeg.exe")
-        fp = os.path.join(base, "ffprobe.exe")
-        if os.path.exists(ff) and os.path.exists(fp):
-            return ff, fp
-
-    # Glob search — catches versioned sub-folders (e.g. pic-time, winget packages)
-    search_roots = [
-        r"C:\Program Files\*\ffmpeg.exe",
-        r"C:\Program Files\*\*\ffmpeg.exe",
-        r"C:\Program Files\*\*\*\ffmpeg.exe",
-        r"C:\Program Files (x86)\*\ffmpeg.exe",
-        r"C:\Program Files (x86)\*\*\ffmpeg.exe",
-        os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Packages\*\ffmpeg.exe"),
-    ]
-    for pattern in search_roots:
-        for ff in glob.glob(pattern):
-            fp = os.path.join(os.path.dirname(ff), "ffprobe.exe")
-            if os.path.exists(fp):
-                return ff, fp
-
     return None, None
 
 
@@ -144,7 +177,7 @@ def _get_video_dimensions(ffprobe: str, path: str) -> tuple:
     r = subprocess.run(
         [ffprobe, "-v", "quiet", "-select_streams", "v:0",
          "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", path],
-        capture_output=True, text=True, creationflags=_PROC_FLAGS,
+        capture_output=True, text=True,
     )
     parts = r.stdout.strip().split("x")
     if len(parts) != 2:
@@ -218,7 +251,7 @@ def create_watermark_overlay(
     opacity: int,
     spacing_h: int,
     spacing_v: int,
-    font_family: str = "Arial",
+    font_family: str = "DejaVu Sans",
     bold: bool = False,
     italic: bool = False,
     underline: bool = False,
@@ -265,7 +298,7 @@ def process_image(
     spacing_h: int,
     spacing_v: int,
     target_long_side: int,
-    font_family: str = "Arial",
+    font_family: str = "DejaVu Sans",
     bold: bool = False,
     italic: bool = False,
     underline: bool = False,
@@ -299,7 +332,7 @@ def process_video(
     target_long_side: int,
     ffmpeg_path: str,
     ffprobe_path: str,
-    font_family: str = "Arial",
+    font_family: str = "DejaVu Sans",
     bold: bool = False,
     italic: bool = False,
     underline: bool = False,
@@ -334,9 +367,7 @@ def process_video(
             "-movflags", "+faststart",
             out_path,
         ]
-        r = subprocess.run(
-            cmd, capture_output=True, text=True, creationflags=_PROC_FLAGS,
-        )
+        r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             raise RuntimeError(f"FFmpeg zakończył z błędem:\n{r.stderr[-600:]}")
     finally:
@@ -358,7 +389,8 @@ class WatermarkApp:
         self.root.title(f"Watermark Tool {VERSION}")
         self.root.resizable(True, False)
 
-        self._ffmpeg, self._ffprobe = _find_ffmpeg()
+        self._ffmpeg  = None
+        self._ffprobe = None
 
         self.source_path   = tk.StringVar()
         self.output_path   = tk.StringVar()
@@ -370,39 +402,39 @@ class WatermarkApp:
         self.opacity_pct   = tk.IntVar(value=70)
         self.export_size   = tk.IntVar(value=800)
 
-        default_font = "Arial" if "Arial" in FONT_NAMES else (FONT_NAMES[0] if FONT_NAMES else "")
+        default_font = FONT_NAMES[0] if FONT_NAMES else "DejaVu Sans"
         self.font_family_var = tk.StringVar(value=default_font)
         self.bold_var        = tk.BooleanVar(value=False)
         self.italic_var      = tk.BooleanVar(value=False)
         self.underline_var   = tk.BooleanVar(value=False)
 
-        self.profile_var  = tk.StringVar()
+        self.profile_var = tk.StringVar()
 
         self._processing = False
         self._build_ui()
         self._refresh_profile_list()
 
-        # Show FFmpeg status in status bar
+        self.status_lbl.configure(text="Szukam FFmpeg…")
+        threading.Thread(target=self._detect_ffmpeg, daemon=True).start()
+
+    def _detect_ffmpeg(self) -> None:
+        self._ffmpeg, self._ffprobe = _find_ffmpeg()
         if self._ffmpeg:
-            self.status_lbl.configure(text="Gotowy. FFmpeg dostępny — obsługa wideo włączona.")
+            msg = "Gotowy. FFmpeg dostępny — obsługa wideo włączona."
         else:
-            self.status_lbl.configure(
-                text="Gotowy. FFmpeg niedostępny — przetwarzanie wideo wyłączone."
-            )
+            msg = "Gotowy. FFmpeg niedostępny — przetwarzanie wideo wyłączone."
+        self.root.after(0, lambda: self.status_lbl.configure(text=msg))
 
     # ──────────────────────────────── UI construction ────────────────────────
 
     def _build_ui(self) -> None:
         self.root.columnconfigure(0, weight=1)
 
-        # ── Profile ──
         prf = ttk.LabelFrame(self.root, text="Profile", padding=10)
         prf.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 4))
         prf.columnconfigure(0, weight=1)
 
-        self.profile_cb = ttk.Combobox(
-            prf, textvariable=self.profile_var, state="readonly"
-        )
+        self.profile_cb = ttk.Combobox(prf, textvariable=self.profile_var, state="readonly")
         self.profile_cb.grid(row=0, column=0, sticky="ew", padx=(0, 6))
 
         btn_frame = ttk.Frame(prf)
@@ -411,14 +443,12 @@ class WatermarkApp:
         ttk.Button(btn_frame, text="Zapisz jako…", width=12, command=self._save_profile).pack(side="left", padx=2)
         ttk.Button(btn_frame, text="Usuń",          width=6,  command=self._delete_profile).pack(side="left", padx=2)
 
-        # ── Foldery ──
         ff = ttk.LabelFrame(self.root, text="Foldery", padding=10)
         ff.grid(row=1, column=0, sticky="ew", padx=12, pady=4)
         ff.columnconfigure(1, weight=1)
         self._folder_row(ff, 0, "Folder źródłowy:", self.source_path)
         self._folder_row(ff, 1, "Folder docelowy:", self.output_path)
 
-        # ── Tekst znaku wodnego ──
         wf = ttk.LabelFrame(self.root, text="Tekst znaku wodnego", padding=10)
         wf.grid(row=2, column=0, sticky="ew", padx=12, pady=4)
         wf.columnconfigure(1, weight=1)
@@ -427,7 +457,6 @@ class WatermarkApp:
         ttk.Label(wf, text="Linia 2:").grid(row=1, column=0, sticky="w", pady=3)
         ttk.Entry(wf, textvariable=self.wm_line2).grid(row=1, column=1, columnspan=3, sticky="ew", padx=8)
 
-        # ── Czcionka ──
         tf = ttk.LabelFrame(self.root, text="Czcionka", padding=10)
         tf.grid(row=3, column=0, sticky="ew", padx=12, pady=4)
         tf.columnconfigure(1, weight=1)
@@ -442,7 +471,6 @@ class WatermarkApp:
         ttk.Checkbutton(style_frame, text="Kursywa",      variable=self.italic_var).pack(side="left", padx=4)
         ttk.Checkbutton(style_frame, text="Podkreślenie", variable=self.underline_var).pack(side="left", padx=4)
 
-        # ── Ustawienia znaku wodnego ──
         sf = ttk.LabelFrame(self.root, text="Ustawienia znaku wodnego", padding=10)
         sf.grid(row=4, column=0, sticky="ew", padx=12, pady=4)
         sf.columnconfigure(1, weight=1)
@@ -451,25 +479,18 @@ class WatermarkApp:
         self._slider_row(sf, 2, "Odstęp pionowy:",    self.spacing_v_var,  80, 2000, suffix="px")
         self._slider_row(sf, 3, "Przezroczystość:",   self.opacity_pct,     0,  100, suffix="%")
 
-        # ── Eksport ──
         ef = ttk.LabelFrame(self.root, text="Eksport", padding=10)
         ef.grid(row=5, column=0, sticky="ew", padx=12, pady=4)
         ef.columnconfigure(1, weight=1)
         ttk.Label(ef, text="Długi bok (px):").grid(row=0, column=0, sticky="w")
-        ttk.Entry(ef, textvariable=self.export_size, width=7).grid(
-            row=0, column=1, sticky="w", padx=8
-        )
+        ttk.Entry(ef, textvariable=self.export_size, width=7).grid(row=0, column=1, sticky="w", padx=8)
 
-        # ── Przyciski ──
         bf = ttk.Frame(self.root)
         bf.grid(row=6, column=0, sticky="w", padx=12, pady=8)
-        self.process_btn = ttk.Button(
-            bf, text="▶  Przetwórz pliki", command=self.start_processing
-        )
+        self.process_btn = ttk.Button(bf, text="▶  Przetwórz pliki", command=self.start_processing)
         self.process_btn.pack(side="left", padx=(0, 8))
         ttk.Button(bf, text="Podgląd znaku wodnego", command=self.show_preview).pack(side="left")
 
-        # ── Postęp ──
         pgf = ttk.Frame(self.root)
         pgf.grid(row=7, column=0, sticky="ew", padx=12, pady=(0, 12))
         pgf.columnconfigure(0, weight=1)
@@ -491,15 +512,12 @@ class WatermarkApp:
         from_: int, to: int, suffix: str = "",
     ) -> ttk.Label:
         ttk.Label(parent, text=label).grid(row=row * 2, column=0, sticky="w", pady=(6, 0))
-
         val_lbl = ttk.Label(parent, text=f"{var.get()}{suffix}", width=12, anchor="e")
         val_lbl.grid(row=row * 2, column=2, sticky="e")
-
         ttk.Scale(
             parent, from_=from_, to=to, variable=var, orient="horizontal",
             command=lambda v, lbl=val_lbl, s=suffix: lbl.config(text=f"{int(float(v))}{s}"),
         ).grid(row=row * 2 + 1, column=0, columnspan=3, sticky="ew", pady=(0, 2))
-
         return val_lbl
 
     # ──────────────────────────────── profile logic ──────────────────────────
@@ -553,10 +571,8 @@ class WatermarkApp:
 
     def _save_profile(self) -> None:
         name = simpledialog.askstring(
-            "Zapisz profil",
-            "Podaj nazwę profilu:",
-            initialvalue=self.profile_var.get(),
-            parent=self.root,
+            "Zapisz profil", "Podaj nazwę profilu:",
+            initialvalue=self.profile_var.get(), parent=self.root,
         )
         if not name or not name.strip():
             return
@@ -634,9 +650,7 @@ class WatermarkApp:
         self.root.wait_window(dlg)
         return result[0]
 
-    def _check_overwrites(
-        self, dst: str, image_files: list, video_files: list
-    ):
+    def _check_overwrites(self, dst: str, image_files: list, video_files: list):
         """
         Check which output files already exist and ask the user what to do.
         Returns (image_files, video_files) with skipped files removed,
@@ -676,7 +690,7 @@ class WatermarkApp:
             elif ans == "no_all":
                 skip.add(fname)
                 skip_all = True
-            else:  # cancel
+            else:
                 return None
 
         return (
@@ -708,10 +722,8 @@ class WatermarkApp:
     def start_processing(self) -> None:
         if self._processing:
             return
-
         src = self.source_path.get().strip()
         dst = self.output_path.get().strip()
-
         if not src or not os.path.isdir(src):
             messagebox.showerror("Błąd", "Podaj prawidłowy folder źródłowy.")
             return
@@ -726,9 +738,9 @@ class WatermarkApp:
             messagebox.showerror("Błąd", "Rozmiar eksportu musi być liczbą od 100 do 20000 px.")
             return
 
-        all_files    = os.listdir(src)
-        image_files  = [f for f in all_files if os.path.splitext(f.lower())[1] in SUPPORTED_EXT]
-        video_files  = [f for f in all_files if os.path.splitext(f.lower())[1] in SUPPORTED_VIDEO_EXT]
+        all_files   = os.listdir(src)
+        image_files = [f for f in all_files if os.path.splitext(f.lower())[1] in SUPPORTED_EXT]
+        video_files = [f for f in all_files if os.path.splitext(f.lower())[1] in SUPPORTED_VIDEO_EXT]
 
         if not image_files and not video_files:
             messagebox.showinfo(
@@ -780,14 +792,13 @@ class WatermarkApp:
         image_files: list,
         video_files: list,
     ) -> None:
-        total   = len(image_files) + len(video_files)
-        errors  = []
-        done    = 0
+        total  = len(image_files) + len(video_files)
+        errors = []
+        done   = 0
 
         for fname in image_files:
             src_path = os.path.join(src, fname)
             dst_path = os.path.join(dst, os.path.splitext(fname)[0] + ".jpg")
-
             try:
                 process_image(src_path, dst_path, target_long_side=target, **params)
             except Exception as exc:
@@ -831,9 +842,9 @@ class WatermarkApp:
 
             self.root.after(0, _upd_v)
 
-        self.root.after(0, lambda: self._finish(total, errors, len(video_files)))
+        self.root.after(0, lambda: self._finish(total, errors))
 
-    def _finish(self, total: int, errors: list, video_count: int) -> None:
+    def _finish(self, total: int, errors: list) -> None:
         self._reset()
         ok = total - len(errors)
         noun = "pliku" if total == 1 else "plików"
@@ -858,7 +869,6 @@ class WatermarkApp:
 
     def show_preview(self) -> None:
         PW, PH = 680, 460
-
         bg = Image.new("RGB", (PW, PH))
         d = ImageDraw.Draw(bg)
 
